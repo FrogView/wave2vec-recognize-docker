@@ -21,7 +21,9 @@ parser.add_argument('--w2v_path', type=str,
 parser.add_argument('--target_dict_path', type=str,
                     default='dict.ltr.txt',
                     help='path of target dict (dict.ltr.txt)')
-
+class TargetDict:
+  def __init__(self, target_dictionary):
+    self.target_dictionary = target_dictionary
 
 class Wav2VecCtc(BaseFairseqModel):
     def __init__(self, w2v_encoder, args):
@@ -154,10 +156,13 @@ def get_feature(filepath):
     return feats
 
 
-def load_model(model_path, target_dict):
-    w2v = torch.load(model_path)
-    model = Wav2VecCtc.build_model(w2v["args"], target_dict)
-    model.load_state_dict(w2v["model"], strict=True)
+def load_model(args, target_dict):
+    w2v = torch.load(args.w2v_path,map_location='cpu')
+    cpArgs=w2v['args']
+    cpArgs.w2v_path=args.w2v_path
+    model = Wav2VecCtc.build_model(cpArgs, target_dict)
+    # print(w2v["model"])
+    # model.load_state_dict(w2v["model"], strict=True)
 
     return [model]
 
@@ -168,12 +173,13 @@ def main():
     net_input = dict()
 
     feature = get_feature(args.wav_path)
-    target_dict = Dictionary.load(args.target_dict_path)
+    target_dictionary = Dictionary.load(args.target_dict_path)
+    task = TargetDict(target_dictionary)
 
-    model = load_model(args.w2v_path, target_dict)
+    model = load_model(args, target_dictionary)
     model[0].eval()
 
-    generator = W2lViterbiDecoder(target_dict)
+    generator = W2lViterbiDecoder(target_dictionary)
     net_input["source"] = feature.unsqueeze(0)
 
     padding_mask = torch.BoolTensor(net_input["source"].size(1)).fill_(False).unsqueeze(0)
@@ -184,7 +190,7 @@ def main():
     with torch.no_grad():
         hypo = generator.generate(model, sample, prefix_tokens=None)
 
-    hyp_pieces = target_dict.string(hypo[0][0]["tokens"].int().cpu())
+    hyp_pieces = target_dictionary.string(hypo[0][0]["tokens"].int().cpu())
     print(post_process(hyp_pieces, 'letter'))
 
 
